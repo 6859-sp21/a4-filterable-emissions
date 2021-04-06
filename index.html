@@ -1,0 +1,236 @@
+<html>
+
+<head>
+  <!-- Load d3.js -->
+  <script src="https://d3js.org/d3.v6.js"></script>
+  <style>
+    div.tooltip {
+      position: absolute;
+      text-align: center;
+      width: auto;
+      height: auto;
+      padding: 2px;
+      font: 12px sans-serif;
+      border: 0px;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+
+    #legend {
+      list-style: none;
+      margin-top: 30px;
+      width: 500px;
+    }
+
+    #legend li {
+      float: left;
+      margin-right: 10px;
+    }
+
+    #legend span {
+      border: 1px solid #ccc;
+      float: left;
+      width: 12px;
+      height: 12px;
+      margin: 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Filterable Emissions Exploration</h1>
+
+  <div id="scatterPlot">
+    <!-- This is where we will put our chart. -->
+  </div>
+  <h2 id="pieChartTitle">Emissions Breakdown for World</h2>
+  <div id="pieChart" style="width:520px;height:420px;">
+    <!-- This is where we will put our chart. -->
+  </div>
+  <ul id="legend">
+  </ul>
+
+  <script>
+    function allToFloat(data) {
+      data.map(d => {
+        for (const key in d) d[key] = !isNaN(parseFloat(d[key])) ? parseFloat(d[key]) : d[key];
+        return d;
+      });
+      return data;
+    }
+
+    d3.csv("https://raw.githubusercontent.com/ZeningQu/World-Bank-Data-by-Indicators/master/climate-change/climate-change.csv").then((climateData) => {
+      climateData = allToFloat(climateData);
+      const g7Countries = ['Canada', 'France', 'Germany', 'Italy', 'Japan', 'United Kingdom', 'United States']
+
+      // 0. Setting variables
+      let year = 2010;
+      let popMin = 0, popMax = 1000000000;
+      let xVar = "Total greenhouse gas emissions (kt of CO2 equivalent)";
+      let yVar = "Agricultural land (sq. km)";
+      let country = "World";
+
+      // 1. Filtering data
+      const data = climateData.filter(d => d["Year"] === year && d[xVar] >= 1 && d[yVar] >= 1 && d["Population, total"] >= popMin && d["Population, total"] <= popMax);
+
+      // 2. Setting up variables that describe our chart's space.
+      const height = 400;
+      const width = 500;
+      const margin = ({ top: 10, right: 10, bottom: 20, left: 20 });
+
+      // *********************************************************************
+      // 3. Create a SVG we will use to make our chart.
+      const svg = d3.create('svg')
+        .attr('width', width)
+        .attr('height', height);
+
+      // 4. Setting up scales.
+      const xScale = d3.scaleLog()
+        .domain([1, d3.max(climateData, d => d[xVar])])
+        .range([margin.left, width - margin.right])
+        .nice();
+
+      const yScale = d3.scaleLog()
+        .domain([1, d3.max(climateData, d => d[yVar])])
+        .range([height - margin.bottom, margin.top])
+        .nice();
+
+      // const colorScale = d3.scaleOrdinal()
+      //   .domain(climateData.map(d => g7Countries.includes(d["Country Name"])))
+      //   .range(d3.schemeTableau10);
+      const colorScale = (countryName) => d3.schemeTableau10[g7Countries.includes(countryName) ? 1 : 0]
+
+      const tooltip = d3.select("body").append("div")
+        .attr("class", "tooltip")
+        .style("opacity", 0);
+
+      // 8.  Adding a background label for the year.
+      const yearLabel = svg.append('text')
+        .attr('x', 40)
+        .attr('y', height - margin.bottom - 20)
+        .attr('fill', '#ccc')
+        .attr('font-family', 'Helvetica Neue, Arial')
+        .attr('font-weight', 500)
+        .attr('font-size', 60)
+        .text(year);
+
+      // 5. Drawing our points
+      const symbol = d3.symbol();
+      svg.append('g')
+        .selectAll('path') // d3-shape functions (like d3.symbol) generate attributes for SVG <path> elements
+        .data(data)
+        .join('path')
+        .attr('transform', d => `translate(${xScale(d[xVar])}, ${yScale(d[yVar])})`)
+        .attr('fill', d => colorScale(d["Country Name"]))
+        .attr('d', d => symbol())
+        .on("mouseover", function (event, d) {
+          tooltip.transition()
+            .duration(200)
+            .style("opacity", .9);
+          tooltip.html(`${d["Country Name"]}`)
+            .style("left", (event.pageX) + "px")
+            .style("background", colorScale(d["Country Name"]))
+            .style("top", (event.pageY - 28) + "px");
+
+          d3.select(this)
+            .attr("fill", "black")
+            .attr("d", symbol.size(64 * 4));
+        })
+        .on("mouseout", function (event, d) {
+          tooltip.transition()
+            .duration(500)
+            .style("opacity", 0);
+          d3.select(this)
+            .attr("fill", colorScale(d["Country Name"]))
+            .attr("d", symbol.size(64));
+        })
+        .on("click", function (event, d) {
+          country = d["Country Name"];
+          updatePie();
+        });
+
+      // 6. Drawing our x-axis
+      svg.append('g')
+        .attr('transform', `translate(0, ${height - margin.bottom})`)
+        .call(d3.axisBottom(xScale))
+        .append('text')
+        .attr('text-anchor', 'end')
+        .attr('fill', 'black')
+        .attr('font-size', '12px')
+        .attr('font-weight', 'bold')
+        .attr('x', width - margin.right)
+        .attr('y', -10)
+        .text(xVar);
+
+      // 7. Drawing our y-axis
+      svg.append('g')
+        .attr('transform', `translate(${margin.left}, 0)`)
+        .call(d3.axisLeft(yScale))
+        .append('text')
+        .attr('transform', `translate(20, ${margin.top}) rotate(-90)`)
+        .attr('text-anchor', 'end')
+        .attr('fill', 'black')
+        .attr('font-size', '12px')
+        .attr('font-weight', 'bold')
+        .text(yVar);
+
+      // *********************************************************************
+
+      const pieHeight = 200;
+      const pieWidth = 200;
+      const pieMargin = ({ top: 10, right: 10, bottom: 20, left: 20 });
+      const pieRadius = Math.min(pieWidth, pieHeight) / 2 - 30;
+
+      const emissions = [
+        'CO2 emissions (kt)',
+        'Methane emissions (kt of CO2 equivalent)',
+        'Nitrous oxide emissions (thousand metric tons of CO2 equivalent)',
+        'Other greenhouse gas emissions, HFC, PFC and SF6 (thousand metric tons of CO2 equivalent)'
+      ]
+
+      const pieSvg = d3.create('svg')
+        .attr("viewBox", [-pieWidth / 2, -pieHeight / 2, pieWidth, pieHeight]);
+      const pieG = pieSvg.append('g')
+        .attr("stroke", "white");
+      const arc = d3.arc()
+        .innerRadius(0)
+        .outerRadius(pieRadius);
+      const pie = d3.pie()
+        .sort(null)
+        .value(d => d.value);
+      const pieColorScale = d3.scaleOrdinal()
+        .domain(emissions)
+        .range(d3.schemeDark2);
+
+      function updatePie() {
+        const selectedData = climateData.filter(d => d["Year"] === year && d["Country Name"] === country)[0];
+        const data = emissions.map(e => ({ key: e, value: selectedData[e] }));
+
+        pieG.selectAll('path')
+          .data(pie(data))
+          .join("path")
+          .attr("fill", (d, i) => pieColorScale(emissions[i]))
+          .attr("d", arc);
+
+        document.getElementById("pieChartTitle").innerText = `Emissions Breakdown for ${country}`
+      }
+      updatePie();
+
+      // *********************************************************************
+      emissions.forEach((e, i) => {
+        const li = document.createElement("li");
+        const span = document.createElement("span");
+        span.style.backgroundColor = pieColorScale(e);
+        li.appendChild(span);
+        li.appendChild(document.createTextNode(e));
+        document.getElementById("legend").appendChild(li);
+      });
+
+      document.getElementById("scatterPlot").appendChild(svg.node());
+      document.getElementById("pieChart").appendChild(pieSvg.node());
+    });
+
+  </script>
+</body>
+
+</html>
